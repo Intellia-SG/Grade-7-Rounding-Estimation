@@ -1,0 +1,78 @@
+// ──────────────────────────────────────────────────
+// Story Phase Content — Global Estimation Squad
+// 6 Illustrated Panels with pedagogical milestones
+// ──────────────────────────────────────────────────
+
+export const STORY_SLIDES = [
+  {
+    id: 1,
+    title: "Meet the Global Estimation Squad 🔍",
+    character: "John, Mike, Sarah & Friends",
+    city: "Global HQ",
+    locationTag: "📍 Global HQ",
+    image: "/assets/images/story_panel1.jpg",
+    text: "John, Mike, Sarah, Emma, Liam, Sofia, Noah, Aisha, Carlos, and Yuki form the Global Estimation Squad — using smart rounding & estimation to solve everyday math mysteries in cities around the world!",
+    highlight: "💡 10 Squad members around the world solving estimation mysteries together!",
+    diagramType: "image",
+  },
+  {
+    id: 2,
+    title: "Mike's New York Shopping Trip 🛒",
+    character: "Mike",
+    city: "New York",
+    locationTag: "📍 New York, USA",
+    image: "/assets/images/story_panel2.jpg",
+    text: "Mike is shopping in New York. His cart shows $18.75, $6.40, and $11.20. About how much will he pay altogether?",
+    highlight: "💡 Rounding prices to dollar benchmarks makes checkout quick!",
+    diagramType: "image",
+    receiptItems: [
+      { name: "Backpack", price: 18.75, rounded: 19 },
+      { name: "Notebook", price: 6.40, rounded: 6 },
+      { name: "Art Kit", price: 11.20, rounded: 11 },
+    ],
+  },
+  {
+    id: 3,
+    title: "Rounding to Benchmark Dollars 💵",
+    character: "Mike & Sarah",
+    city: "New York",
+    locationTag: "📍 New York, USA",
+    image: "/assets/images/story_panel3.jpg",
+    text: "Rounding each price to the nearest dollar makes $18.75 about $19, $6.40 about $6, and $11.20 about $11. Nineteen plus six plus eleven is about $36 altogether!",
+    highlight: "💡 $19 + $6 + $11 = $36 ≈ Fast & Accurate Estimate!",
+    diagramType: "image",
+  },
+  {
+    id: 4,
+    title: "Priya's Mumbai Express Train 🚆",
+    character: "Priya",
+    city: "Mumbai",
+    locationTag: "📍 Mumbai, India",
+    image: "/assets/images/story_panel4.jpg",
+    text: "Priya in Mumbai reads that a passenger train has 3,912 seats. She rounds it to the nearest thousand: about 4,000 seats!",
+    highlight: "💡 Since 912 is past the halfway mark of 500, we round up to 4,000!",
+    diagramType: "image",
+  },
+  {
+    id: 5,
+    title: "Diego's Compatible Numbers 🧮",
+    character: "Diego",
+    city: "Rio de Janeiro",
+    locationTag: "📍 Rio de Janeiro, Brazil",
+    image: "/assets/images/story_panel5.jpg",
+    text: "Diego checks his math homework: 396 × 21. Using compatible numbers, 400 × 20 = 8,000! His exact answer should be close to that.",
+    highlight: "💡 Compatible numbers (400 × 20 = 8,000) make mental multiplication easy!",
+    diagramType: "image",
+  },
+  {
+    id: 6,
+    title: "The Superpower of Estimation ⭐",
+    character: "Global Estimation Squad",
+    city: "World Wide",
+    locationTag: "📍 Global HQ",
+    image: "/assets/images/story_panel6.jpg",
+    text: "Every city, every receipt, every big calculation: rounding and estimation help us think fast, budget wisely, and check our work!",
+    highlight: "💡 Think Fast · Check Work · Master Number Sense!",
+    diagramType: "image",
+  },
+];
