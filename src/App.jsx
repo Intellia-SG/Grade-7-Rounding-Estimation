@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { stopNarration } from './utils/audio';
+import { stopNarration, setSoundEnabled } from './utils/audio';
 import FloatingNumbers from './components/FloatingNumbers';
 import IntroScreen from './components/IntroScreen';
 import WonderPhase from './components/WonderPhase';
@@ -25,8 +25,9 @@ export default function App() {
 
   const toggleAudio = useCallback(() => {
     setAudioEnabled(prev => {
-      if (prev) stopNarration();
-      return !prev;
+      const next = !prev;
+      setSoundEnabled(next);
+      return next;
     });
   }, []);
 
@@ -59,8 +60,8 @@ export default function App() {
           <button
             className="audio-toggle-btn"
             onClick={toggleAudio}
-            title={audioEnabled ? 'Mute Narration' : 'Unmute Narration'}
-            aria-label={audioEnabled ? 'Mute Narration' : 'Unmute Narration'}
+            title={audioEnabled ? 'Mute Sound Effects' : 'Unmute Sound Effects'}
+            aria-label={audioEnabled ? 'Mute Sound Effects' : 'Unmute Sound Effects'}
           >
             {audioEnabled ? '🔊' : '🔇'}
           </button>
@@ -99,8 +100,8 @@ export default function App() {
             <button
               className="capsule-audio-btn"
               onClick={toggleAudio}
-              title={audioEnabled ? 'Mute Narration' : 'Unmute Narration'}
-              aria-label={audioEnabled ? 'Mute Narration' : 'Unmute Narration'}
+              title={audioEnabled ? 'Mute Sound Effects' : 'Unmute Sound Effects'}
+              aria-label={audioEnabled ? 'Mute Sound Effects' : 'Unmute Sound Effects'}
             >
               {audioEnabled ? '🔊' : '🔇'}
             </button>
