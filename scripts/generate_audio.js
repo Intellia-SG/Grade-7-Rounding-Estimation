@@ -76,6 +76,14 @@ const phrases = [
   { text: "Spot on! That explains rounding and estimation clearly!", style: 'celebration' },
   { text: "Think about how benchmark numbers help us approximate reasonable values.", style: 'thinking' },
   { text: "How confident do you feel about rounding and estimation? Every answer is great!", style: 'question' },
+  { text: "Look closely at the distances from the midpoint.", style: 'thinking' },
+  { text: "400 and 20 are super compatible! Mental multiplication takes less than 2 seconds.", style: 'celebration' },
+  { text: "400 ÷ 20 = 20 gives an instant sanity check before diving into long division.", style: 'statement' },
+  { text: "900 − 400 = 500 lets you immediately verify reasonable change or budget estimates.", style: 'statement' },
+  { text: "400 × 20 = 8,000.", style: 'statement' },
+  { text: "400 ÷ 20 = 20.", style: 'statement' },
+  { text: "$19 + $11 = $30.", style: 'statement' },
+  { text: "Incredible! You are on a 5 question streak! Perfect estimate!", style: 'celebration' },
 ];
 
 async function generate() {

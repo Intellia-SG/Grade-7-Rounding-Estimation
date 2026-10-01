@@ -27,6 +27,7 @@ export default function App() {
     setAudioEnabled(prev => {
       const next = !prev;
       setSoundEnabled(next);
+      if (!next) stopNarration();
       return next;
     });
   }, []);
