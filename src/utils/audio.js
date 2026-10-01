@@ -1,7 +1,10 @@
 // ──────────────────────────────────────────────────
 // Enhanced Audio Narration Engine — Rounding & Estimation
-// ElevenLabs Alice Voice + Web Audio Sound Effects
+// ElevenLabs Alice Voice + Robust Browser Speech Synthesis Fallback
+// + Web Audio Sound Effects
 // ──────────────────────────────────────────────────
+
+import { audioMap } from './audioMap.js';
 
 let currentQueue = null;
 let isSpeaking = false;
@@ -11,13 +14,270 @@ const elevenLabsCache = new Map();
 
 const ELEVENLABS_VOICE_ID = 'Xb7hH8MSUJpSbSDYk0k2'; // Alice
 
-let audioMap = {};
-try {
-  import('./audioMap.js').then(module => {
-    audioMap = module.audioMap || {};
-  }).catch(() => {});
-} catch (e) { }
+// ─── Robust Speech Synthesis Fallback Engine ──────
+// Retains utterance references to prevent Chromium garbage collection bug
+const activeUtterances = new Set();
+let keepAliveTimer = null;
+let cachedVoices = [];
 
+function updateVoices() {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return [];
+  try {
+    const voices = window.speechSynthesis.getVoices();
+    if (voices && voices.length > 0) {
+      cachedVoices = voices;
+    }
+  } catch (e) {
+    // Ignore speech voice access errors
+  }
+  return cachedVoices;
+}
+
+if (typeof window !== 'undefined' && window.speechSynthesis) {
+  updateVoices();
+  if ('onvoiceschanged' in window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = updateVoices;
+  }
+}
+
+/**
+ * Finds the highest quality English female/friendly voice to match the Alice persona.
+ */
+function getBestVoice() {
+  const voices = cachedVoices.length > 0 ? cachedVoices : updateVoices();
+  if (!voices || voices.length === 0) return null;
+
+  // 1. Preferred high-quality natural/online voices
+  const preferredNames = [
+    'Microsoft Jenny Online (Natural)',
+    'Microsoft Aria Online (Natural)',
+    'Google US English',
+    'Google UK English Female',
+    'Microsoft Zira',
+    'Samantha',
+    'Victoria',
+    'Karen',
+    'Moira',
+    'Fiona',
+    'Alice'
+  ];
+
+  for (const name of preferredNames) {
+    const match = voices.find(v => v.name.toLowerCase().includes(name.toLowerCase()));
+    if (match) return match;
+  }
+
+  // 2. Any English voice that sounds female or natural
+  const femaleEn = voices.find(v =>
+    v.lang.startsWith('en') &&
+    (v.name.toLowerCase().includes('female') ||
+      v.name.toLowerCase().includes('natural') ||
+      v.name.toLowerCase().includes('woman'))
+  );
+  if (femaleEn) return femaleEn;
+
+  // 3. Standard English voices
+  const enUS = voices.find(v => v.lang === 'en-US');
+  if (enUS) return enUS;
+
+  const anyEn = voices.find(v => v.lang.startsWith('en'));
+  if (anyEn) return anyEn;
+
+  // 4. Default voice
+  return voices.find(v => v.default) || voices[0] || null;
+}
+
+/**
+ * Chromium Bug Fix: SpeechSynthesis randomly pauses itself mid-sentence or stays in paused state.
+ * Heartbeat periodically resumes synthesis while utterances are active.
+ */
+function startKeepAlive() {
+  if (keepAliveTimer) return;
+  keepAliveTimer = setInterval(() => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+    }
+  }, 800);
+}
+
+function stopKeepAlive() {
+  if (keepAliveTimer) {
+    clearInterval(keepAliveTimer);
+    keepAliveTimer = null;
+  }
+}
+
+/**
+ * Normalizes math symbols, currencies, and markdown for natural speech.
+ */
+function cleanSpeechText(rawText) {
+  if (!rawText) return '';
+  return rawText
+    // Remove markdown formatting
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/_(.*?)_/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    // Remove emojis that may cause odd pronunciations
+    .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+    // Normalize math symbols into natural English words
+    .replace(/≈/g, ' approximately ')
+    .replace(/×/g, ' times ')
+    .replace(/÷/g, ' divided by ')
+    .replace(/≥/g, ' greater than or equal to ')
+    .replace(/≤/g, ' less than or equal to ')
+    .replace(/≠/g, ' not equal to ')
+    .replace(/\$/g, ' dollars ')
+    .replace(/%/g, ' percent ')
+    .replace(/\+/g, ' plus ')
+    .replace(/=/g, ' equals ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Robust fallback speech using browser SpeechSynthesis.
+ * Guaranteed to never hang or freeze lesson progression.
+ */
+function fallbackSpeech(text, style = 'statement', expectedPlayId) {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      isSpeaking = false;
+      resolve();
+      return;
+    }
+
+    if (expectedPlayId !== undefined && expectedPlayId !== playId) {
+      resolve();
+      return;
+    }
+
+    const spokenText = cleanSpeechText(text);
+    if (!spokenText) {
+      if (expectedPlayId === undefined || expectedPlayId === playId) {
+        isSpeaking = false;
+      }
+      resolve();
+      return;
+    }
+
+    let settled = false;
+    let timeoutId = null;
+    let utterance = null;
+
+    const finalize = () => {
+      if (settled) return;
+      settled = true;
+
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+
+      if (utterance) {
+        activeUtterances.delete(utterance);
+      }
+
+      if (activeUtterances.size === 0) {
+        stopKeepAlive();
+      }
+
+      if (expectedPlayId === undefined || expectedPlayId === playId) {
+        isSpeaking = false;
+      }
+      resolve();
+    };
+
+    try {
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+      window.speechSynthesis.cancel();
+
+      utterance = new SpeechSynthesisUtterance(spokenText);
+      const voice = getBestVoice();
+      if (voice) {
+        utterance.voice = voice;
+        utterance.lang = voice.lang || 'en-US';
+      } else {
+        utterance.lang = 'en-US';
+      }
+
+      // Emotional cadence modulation
+      switch (style) {
+        case 'celebration':
+          utterance.rate = 1.05;
+          utterance.pitch = 1.15;
+          break;
+        case 'encouragement':
+          utterance.rate = 1.0;
+          utterance.pitch = 1.1;
+          break;
+        case 'question':
+          utterance.rate = 0.95;
+          utterance.pitch = 1.05;
+          break;
+        case 'thinking':
+          utterance.rate = 0.92;
+          utterance.pitch = 0.95;
+          break;
+        case 'emphasis':
+          utterance.rate = 0.95;
+          utterance.pitch = 1.05;
+          break;
+        default:
+          utterance.rate = 1.0;
+          utterance.pitch = 1.0;
+      }
+
+      utterance.onend = finalize;
+      utterance.onerror = finalize;
+
+      // Retain reference to prevent garbage collection during playback
+      activeUtterances.add(utterance);
+      startKeepAlive();
+
+      // Watchdog timer: If browser engine stalls, resolve safely without blocking UI
+      const words = spokenText.split(/\s+/).filter(Boolean).length;
+      const timeoutMs = Math.max(3500, (words / 1.6) * 1000 + 3500);
+      timeoutId = setTimeout(finalize, timeoutMs);
+
+      // Defer slightly (15ms) to prevent cancel() from cancelling the new utterance
+      setTimeout(() => {
+        if (settled) return;
+        if (expectedPlayId !== undefined && expectedPlayId !== playId) {
+          finalize();
+          return;
+        }
+        try {
+          window.speechSynthesis.speak(utterance);
+        } catch (err) {
+          finalize();
+        }
+      }, 15);
+    } catch (e) {
+      finalize();
+    }
+  });
+}
+
+function stopFallbackSpeech() {
+  activeUtterances.clear();
+  stopKeepAlive();
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    try {
+      window.speechSynthesis.cancel();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+    } catch (e) {}
+  }
+}
+
+// ─── ElevenLabs Voice Settings ───────────────────
 const getElevenLabsSettings = (speechStyle) => {
   switch (speechStyle) {
     case 'celebration':
@@ -38,6 +298,11 @@ const getElevenLabsSettings = (speechStyle) => {
 export async function getAudioUrl(text, style) {
   if (audioMap && audioMap[text]) {
     return audioMap[text];
+  }
+
+  const trimmed = text?.trim();
+  if (trimmed && audioMap && audioMap[trimmed]) {
+    return audioMap[trimmed];
   }
 
   const cacheKey = `${text}_${style}`;
@@ -73,7 +338,7 @@ export async function getAudioUrl(text, style) {
       const blob = await response.blob();
       return URL.createObjectURL(blob);
     } catch (err) {
-      // Fallback: Use browser speech synthesis if available
+      // Fallback: Use browser speech synthesis
       return null;
     }
   })();
@@ -85,50 +350,82 @@ export async function getAudioUrl(text, style) {
 
 export function speak(text, enabled = true, style = 'statement') {
   return new Promise(async (resolve) => {
-    if (!enabled || !text) { resolve(); return; }
+    if (!enabled || !text || !text.trim()) {
+      resolve();
+      return;
+    }
 
     playId++;
     const currentPlayId = playId;
-    window.speechSynthesis?.cancel();
+
+    // Stop ongoing audio
+    if (currentAudio) {
+      try {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+      } catch (e) {}
+      currentAudio = null;
+    }
+
+    // Cancel speech synthesis
+    stopFallbackSpeech();
     isSpeaking = true;
 
     try {
       const audioUrl = await getAudioUrl(text, style);
-      if (currentPlayId !== playId) { isSpeaking = false; resolve(); return; }
+      if (currentPlayId !== playId) {
+        resolve();
+        return;
+      }
 
       if (audioUrl) {
-        if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0; }
-        currentAudio = new Audio(audioUrl);
-        currentAudio.onended = () => { isSpeaking = false; resolve(); };
-        currentAudio.onerror = () => {
-          fallbackSpeech(text, style).then(resolve);
+        const audio = new Audio(audioUrl);
+        currentAudio = audio;
+
+        let handled = false;
+        const handleDone = () => {
+          if (handled) return;
+          handled = true;
+          if (currentAudio === audio) {
+            currentAudio = null;
+          }
+          if (currentPlayId === playId) {
+            isSpeaking = false;
+          }
+          resolve();
         };
-        await currentAudio.play();
+
+        audio.onended = handleDone;
+        audio.onerror = () => {
+          if (handled) return;
+          handled = true;
+          if (currentPlayId === playId) {
+            fallbackSpeech(text, style, currentPlayId).then(resolve);
+          } else {
+            resolve();
+          }
+        };
+
+        try {
+          await audio.play();
+        } catch (playErr) {
+          // Autoplay blocked or interrupted
+          if (handled) return;
+          handled = true;
+          if (currentPlayId === playId) {
+            await fallbackSpeech(text, style, currentPlayId);
+          }
+          resolve();
+        }
         return;
       } else {
-        await fallbackSpeech(text, style);
+        await fallbackSpeech(text, style, currentPlayId);
         resolve();
       }
     } catch (error) {
-      await fallbackSpeech(text, style);
-      resolve();
-    }
-  });
-}
-
-function fallbackSpeech(text, style) {
-  return new Promise((resolve) => {
-    if (!window.speechSynthesis) { isSpeaking = false; resolve(); return; }
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = style === 'celebration' ? 1.05 : style === 'question' ? 0.95 : 1.0;
-      utterance.pitch = style === 'celebration' ? 1.2 : style === 'thinking' ? 0.9 : 1.05;
-      utterance.onend = () => { isSpeaking = false; resolve(); };
-      utterance.onerror = () => { isSpeaking = false; resolve(); };
-      window.speechSynthesis.speak(utterance);
-    } catch (e) {
-      isSpeaking = false;
+      if (currentPlayId === playId) {
+        await fallbackSpeech(text, style, currentPlayId);
+      }
       resolve();
     }
   });
@@ -164,11 +461,18 @@ export function narrate(segments, enabled = true) {
 
   const cancel = () => {
     cancelled = true;
+    playId++; // Invalidate pending fetches and speaks immediately
     if (currentQueue === queueId) {
-      window.speechSynthesis?.cancel();
-      if (currentAudio) { currentAudio.pause(); currentAudio.currentTime = 0; }
-      isSpeaking = false;
       currentQueue = null;
+      stopFallbackSpeech();
+      if (currentAudio) {
+        try {
+          currentAudio.pause();
+          currentAudio.currentTime = 0;
+        } catch (e) {}
+        currentAudio = null;
+      }
+      isSpeaking = false;
     }
   };
 
@@ -179,9 +483,10 @@ export function narrate(segments, enabled = true) {
       const segment = segments[i];
       if (cancelled || currentQueue !== queueId) return;
 
+      // Preload next segment audio if available
       if (i + 1 < segments.length) {
         const nextSeg = segments[i + 1];
-        if (nextSeg.text && nextSeg.text.trim()) {
+        if (nextSeg && nextSeg.text && nextSeg.text.trim()) {
           getAudioUrl(nextSeg.text, nextSeg.style).catch(() => {});
         }
       }
@@ -190,7 +495,9 @@ export function narrate(segments, enabled = true) {
         await speak(segment.text, true, segment.style);
       }
 
-      if (segment.pause > 0 && !cancelled && currentQueue === queueId) {
+      if (cancelled || currentQueue !== queueId) return;
+
+      if (segment.pause > 0) {
         await new Promise(r => setTimeout(r, segment.pause));
       }
     }
@@ -202,10 +509,12 @@ export function narrate(segments, enabled = true) {
 export function stopNarration() {
   playId++;
   currentQueue = null;
-  window.speechSynthesis?.cancel();
+  stopFallbackSpeech();
   if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
+    try {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+    } catch (e) {}
     currentAudio = null;
   }
   isSpeaking = false;
